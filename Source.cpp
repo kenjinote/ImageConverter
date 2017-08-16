@@ -42,13 +42,41 @@ BOOL SaveBitmapAs(LPCWSTR pszFileType, LPCWSTR pszFileName, Image* pImage)
 	return FALSE;
 }
 
+Gdiplus::Bitmap * CreateMonoBitmap(Gdiplus::Bitmap * image)
+{
+	const unsigned int nWidth = image->GetWidth();
+	const unsigned int nHeight = image->GetHeight();
+	Gdiplus::Bitmap* _p = new Gdiplus::Bitmap(nWidth, nHeight, PixelFormat1bppIndexed);
+	Gdiplus::BitmapData _locked = { 0 };
+	_p->LockBits(&Gdiplus::Rect(0, 0, nWidth, nHeight), Gdiplus::ImageLockModeRead, PixelFormat1bppIndexed, &_locked);
+	for (unsigned int y = 0; y < nHeight; ++y)
+	{
+		byte* pixel = (byte*)_locked.Scan0 + y * _locked.Stride;
+		for (unsigned int x = 0; x < nWidth; ++x)
+		{
+			Gdiplus::Color color;
+			image->GetPixel(x, y, &color);
+			if (color.GetValue() == Gdiplus::Color::White)
+			{
+				pixel[x / 8] |= 0x1 << ((7 - x) % 8);
+			}
+			else
+			{
+				pixel[x / 8] &= ~(0x1 << (7 - x) % 8);
+			}
+		}
+	}
+	_p->UnlockBits(&_locked);
+	return _p;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	static HWND hStatic, hCombo1, hCombo2;
+	static HWND hStatic, hCombo1, hCombo2, hCheck;
 	switch (msg)
 	{
 	case WM_CREATE:
-		hStatic = CreateWindow(TEXT("Static"), 0, WS_CHILD | WS_VISIBLE | SS_BITMAP, 0, 80, 0, 0, hWnd, 0, ((LPCREATESTRUCT)(lParam))->hInstance, 0);
+		hStatic = CreateWindow(TEXT("Static"), 0, WS_CHILD | WS_VISIBLE | SS_BITMAP, 0, 120, 0, 0, hWnd, 0, ((LPCREATESTRUCT)(lParam))->hInstance, 0);
 		hCombo1 = CreateWindow(TEXT("COMBOBOX"), 0, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | CBS_DROPDOWNLIST, 0, 0, 256, 2048, hWnd, 0, ((LPCREATESTRUCT)(lParam))->hInstance, 0);
 		SendMessage(hCombo1, CB_ADDSTRING, 0, (LPARAM)TEXT(".png"));
 		SendMessage(hCombo1, CB_ADDSTRING, 0, (LPARAM)TEXT(".jpg"));
@@ -76,24 +104,45 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		SendMessage(hCombo2, CB_ADDSTRING, 0, (LPARAM)TEXT("PixelFormat64bppPARGB"));
 		SendMessage(hCombo2, CB_ADDSTRING, 0, (LPARAM)TEXT("PixelFormat32bppCMYK"));
 		SendMessage(hCombo2, CB_SETCURSEL, 7, 0);
+		hCheck = CreateWindow(TEXT("BUTTON"), TEXT("白ピクセル以外を黒と判定する"), WS_CHILD | WS_VISIBLE | WS_DISABLED | BS_AUTOCHECKBOX, 0, 80, 256, 32, hWnd, 0, ((LPCREATESTRUCT)(lParam))->hInstance, 0);
 		DragAcceptFiles(hWnd, TRUE);
+		break;
+	case WM_COMMAND:
+		if ((HWND)lParam == hCombo2 && (HIWORD(wParam) == CBN_SELCHANGE))
+		{
+			TCHAR szText[256];
+			GetWindowText(hCombo2, szText, _countof(szText));
+			EnableWindow(hCheck, lstrcmp(szText, TEXT("PixelFormat1bppIndexed")) == 0);
+		}
 		break;
 	case WM_DROPFILES:
 	{
-		HDROP hDrop = (HDROP)wParam;
 		TCHAR szFileName[MAX_PATH];
-		UINT iFile, nFiles;
-		nFiles = DragQueryFile((HDROP)hDrop, 0xFFFFFFFF, NULL, 0);
-		for (iFile = 0; iFile<nFiles; ++iFile)
+		const UINT nFiles = DragQueryFile((HDROP)wParam, 0xFFFFFFFF, NULL, 0);
+		for (UINT i = 0; i<nFiles; ++i)
 		{
-			DragQueryFile(hDrop, iFile, szFileName, sizeof(szFileName));
+			DragQueryFile((HDROP)wParam, i, szFileName, sizeof(szFileName));
 			Gdiplus::Bitmap *imgTemp = Gdiplus::Bitmap::FromFile(szFileName);
 			if (imgTemp)
 			{
 				Gdiplus::Bitmap*pBitmap = 0;
 				switch (SendMessage(hCombo2, CB_GETCURSEL, 0, 0))
 				{
-				case 0:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat1bppIndexed); break;
+				case 0:
+					if (SendMessage(hCheck, BM_GETCHECK, 0, 0))
+					{
+						Gdiplus::Bitmap*pMonoBitmap = CreateMonoBitmap(imgTemp);
+						if (pMonoBitmap)
+						{
+							pBitmap = pMonoBitmap->Clone(0, 0, pMonoBitmap->GetWidth(), pMonoBitmap->GetHeight(), PixelFormat1bppIndexed);
+							delete pMonoBitmap;
+						}
+					}
+					else
+					{
+						pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat1bppIndexed);
+					}
+					break;
 				case 1:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat4bppIndexed); break;
 				case 2:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat8bppIndexed); break;
 				case 3:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat16bppGrayScale); break;
@@ -109,6 +158,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				case 13:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat64bppPARGB); break;
 				case 14:pBitmap = imgTemp->Clone(0, 0, imgTemp->GetWidth(), imgTemp->GetHeight(), PixelFormat32bppCMYK); break;
 				}
+				delete imgTemp;
 				if (pBitmap)
 				{
 					HBITMAP hBitmap = NULL;
@@ -116,6 +166,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					if (status == Ok)
 					{
 						SendMessage(hStatic, STM_SETIMAGE, IMAGE_BITMAP, (LPARAM)hBitmap);
+						DeleteObject(hBitmap);
 					}
 					TCHAR pszBuf[5] = { 0 };
 					const DWORD_PTR nIndex = SendMessage(hCombo1, CB_GETCURSEL, 0, 0);
@@ -134,11 +185,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 					}
 					delete pBitmap;
 				}
-				delete imgTemp;
 			}
 		}
 		SendMessage(hStatic, STM_SETIMAGE, IMAGE_BITMAP, 0);
-		DragFinish(hDrop);
+		DragFinish((HDROP)wParam);
 	}
 	break;
 	case WM_DESTROY:
