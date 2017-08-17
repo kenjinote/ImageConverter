@@ -121,7 +121,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		const UINT nFiles = DragQueryFile((HDROP)wParam, 0xFFFFFFFF, NULL, 0);
 		for (UINT i = 0; i<nFiles; ++i)
 		{
-			DragQueryFile((HDROP)wParam, i, szFileName, sizeof(szFileName));
+			DragQueryFile((HDROP)wParam, i, szFileName, _countof(szFileName));
 			Gdiplus::Bitmap *imgTemp = Gdiplus::Bitmap::FromFile(szFileName);
 			if (imgTemp)
 			{
