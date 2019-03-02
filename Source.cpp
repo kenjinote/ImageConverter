@@ -70,6 +70,83 @@ Gdiplus::Bitmap * CreateMonoBitmap(Gdiplus::Bitmap * image)
 	return _p;
 }
 
+void RotateExif(Image* pImage)
+{
+	int n = pImage->GetPropertyItemSize(PropertyTagOrientation);
+	if (n > 0)
+	{
+		Gdiplus::PropertyItem* pItem = (Gdiplus::PropertyItem*)malloc(n);
+		if (pImage->GetPropertyItem(PropertyTagOrientation, n, pItem) == Ok)
+		{
+			if (pItem->type == PropertyTagTypeShort)
+			{
+				int nOrientation = *(short*)pItem->value;
+				RotateFlipType type = RotateNoneFlipNone;
+				switch (nOrientation) {
+				case 1:
+					//   上
+					// 左　右
+					//   下
+					// そのまま
+					break;
+				case 2:
+					//   上
+					// 右　左
+					//   下
+					// 左右反転
+					type = RotateNoneFlipX;
+					break;
+				case 3:
+					//   下
+					// 右　左
+					//   上
+					// 上下左右反転
+					type = RotateNoneFlipXY;
+					break;
+				case 4:
+					//   下
+					// 左　右
+					//   上
+					// 上下反転
+					type = RotateNoneFlipY;
+					break;
+				case 5:
+					//   左
+					// 上　下
+					//   右
+					// 90度回転後左右反転
+					type = Rotate90FlipX;
+					break;
+				case 6:
+					//   右
+					// 上　下
+					// 　左
+					// 90度回転
+					type = Rotate90FlipNone;
+					break;
+				case 7:
+					//   右
+					// 下　上
+					//   左
+					// 270度回転後左右反転
+					type = Rotate270FlipX;
+					break;
+				case 8:
+					//   左
+					// 下　上
+					//   右
+					// 270度回転
+					type = Rotate270FlipNone;
+					break;
+				}
+				if (type != RotateNoneFlipNone)
+					pImage->RotateFlip(type);
+			}
+		}
+		free(pItem);
+	}
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	static HWND hStatic, hCombo1, hCombo2, hCheck;
@@ -125,6 +202,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			Gdiplus::Bitmap *imgTemp = Gdiplus::Bitmap::FromFile(szFileName);
 			if (imgTemp)
 			{
+				RotateExif(imgTemp); // 画像に回転情報がある場合は回転しておく
 				Gdiplus::Bitmap*pBitmap = 0;
 				switch (SendMessage(hCombo2, CB_GETCURSEL, 0, 0))
 				{
